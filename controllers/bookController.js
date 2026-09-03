@@ -95,5 +95,18 @@ module.exports = {
             message : "Book updated successfully",
             data : existingBook
         })
+    },
+
+    deleteBook : (req, res) => {
+        const id = parseInt(req.params.id);
+        const idx = books.findIndex(book => book.id === id);
+
+        if (idx === -1) return res.status(404).json({error : "Book not found"});
+
+        books.splice(idx, 1);
+
+        res.status(200).json({
+            message : "Book deleted successfully"
+        })
     }
 }
