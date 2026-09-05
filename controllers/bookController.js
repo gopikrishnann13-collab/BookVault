@@ -2,7 +2,22 @@ const books = require('../data/books');
 
 module.exports = {
     getBooks : (req, res) => {
-        res.json(books);
+        const {genre, available, author} = req.query;
+        var filteredBooks = books;
+
+        if (genre) {
+            filteredBooks = filteredBooks.filter(book => book.genre.toLowerCase() === genre.toLowerCase());
+        }
+        if (available) {
+            if (available.toLowerCase() === "true" || available.toLowerCase() === "false") {
+                filteredBooks = filteredBooks.filter(book => String(book.available).toLowerCase() === available.toLowerCase());
+            } else return res.status(400).json({ error : "Invalid available value"});
+        }
+        if (author) {
+            filteredBooks = filteredBooks.filter(book => book.author.toLowerCase().includes(author.toLowerCase()));
+        }
+
+        res.json(filteredBooks);
     },
 
     getBook : (req, res) => {
