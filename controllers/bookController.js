@@ -6,6 +6,7 @@ module.exports = {
     getBooks : async (req, res) => {
         try {
             const { title, author, genre, year, available } = req.query;
+            let { page, limit } = req.query;
             const filter = {};
 
             if (title) filter.title = title.trim();
@@ -21,9 +22,19 @@ module.exports = {
                 else if (available.trim().toLowerCase() === "false") filter.available = false;
                 else return res.status(400).json({error: "Invalid available parameter"})
             }
+            if (page) {
+                const parsedPage = Number(page.trim());
+                if (!Number.isInteger(parsedPage) || parsedPage < 1) return res.status(400).json({ error: "Invalid page parameter"});
+                page = parsedPage; 
+            } else page = 1;
+            if (limit) {
+                const parsedLimit = Number(limit.trim());
+                if (!Number.isInteger(parsedLimit) || parsedLimit < 1) return res.status(400).json({ error: "Invalid limit parameter"});
+                limit = parsedLimit; 
+            } else limit = 5;
 
             const db = getDB();
-            const books = await db.collection('books').find(filter).collation({locale: "en", strength: 2}).toArray();
+            const books = await db.collection('books').find(filter).sort({ title: 1 }).skip((page - 1) * limit).limit(limit).collation({locale: "en", strength: 2}).toArray();
 
             return res.status(200).json(books);
         } catch (err) {
