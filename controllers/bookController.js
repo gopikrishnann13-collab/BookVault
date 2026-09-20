@@ -1,127 +1,149 @@
-const books = require('../data/books');
+const { ObjectId } = require('mongodb');
+const { getDB } = require('../config/db');
+
 
 module.exports = {
-    getBooks : (req, res) => {
-        const {genre, available, author} = req.query;
-        var filteredBooks = books;
+    getBooks : async (req, res) => {
+        try {
+            const { title, author, genre, year, available } = req.query;
+            const filter = {};
 
-        if (genre) {
-            filteredBooks = filteredBooks.filter(book => book.genre.toLowerCase() === genre.toLowerCase());
-        }
-        if (available) {
-            if (available.toLowerCase() === "true" || available.toLowerCase() === "false") {
-                filteredBooks = filteredBooks.filter(book => String(book.available).toLowerCase() === available.toLowerCase());
-            } else return res.status(400).json({ error : "Invalid available value"});
-        }
-        if (author) {
-            filteredBooks = filteredBooks.filter(book => book.author.toLowerCase().includes(author.toLowerCase()));
-        }
+            if (title) filter.title = title.trim();
+            if (author) filter.author = author.trim();
+            if (genre) filter.genre = genre.trim();
+            if (year) {
+                const parsedYear = Number(year.trim());
+                if (!Number.isNaN(parsedYear)) filter.year = parsedYear;
+                else return res.status(400).json({ error: "Invalid year parameter"}); 
+            }
+            if (available !== undefined) {
+                if (available.trim().toLowerCase() === "true") filter.available = true;
+                else if (available.trim().toLowerCase() === "false") filter.available = false;
+                else return res.status(400).json({error: "Invalid available parameter"})
+            }
 
-        res.json(filteredBooks);
+            const db = getDB();
+            const books = await db.collection('books').find(filter).collation({locale: "en", strength: 2}).toArray();
+
+            return res.status(200).json(books);
+        } catch (err) {
+            return res.status(500).json({ error : "Could not fetch documents"});
+        }        
     },
 
-    getBook : (req, res) => {
-        const book = books.find(book => book.id == req.params.id)
-        if (!book) res.status(404).json({ error: "Book not found" });
-        else res.json(book);
-    },
+    getBook : async (req, res) => {
+        try {
+            if (ObjectId.isValid(req.params.id)) {
+                const db = getDB();
+                const book = await db.collection('books').findOne({ _id: new ObjectId(req.params.id)});
 
-    addBook : (req, res) => {
-        const {title, author, genre, year, available} = req.body;
-        const currYear = new Date().getFullYear();
-
-        if (typeof title !== "string" || title.trim().length === 0) return res.status(400).json({ error: "Invalid title"});
-        if (typeof author !== "string" || author.trim().length === 0) return res.status(400).json({ error: "Invalid author name"});
-        if (typeof genre !== "string" || genre.trim().length === 0) return res.status(400).json({ error: "Invalid genre"});
-        if (!Number.isInteger(year) || year < 1000 || year > currYear) return res.status(400).json({ error: "Invalid year"});
-        if (typeof available !== "boolean") return res.status(400).json({ error: "Available must be boolean"});
-
-        const duplicate = books.some(book => book.title.toLowerCase().trim() === title.toLowerCase().trim() &&
-                                             book.author.toLowerCase().trim() === author.toLowerCase().trim() &&
-                                             book.year === year);
-
-        if (duplicate) return res.status(400).json({ error : "Duplicate entry"});
-
-        const id = books.length === 0 ? 1 : Math.max(...books.map(book => book.id)) + 1;
-
-        const newBook = {
-            id,
-            title,
-            author,
-            genre,
-            year,
-            available
+                if (book) return res.status(200).json(book);
+                
+                return res.status(404).json({ error: "Book not found"});
+            } else return res.status(400).json({ error: "Invalid ID"});
+        } catch (err) {
+            return res.status(500).json({ error : "Could not fetch document"});
         }
-        books.push(newBook);
-
-        res.status(201).json({
-            message : "New book added successfully",
-            data : newBook
-        });
     },
 
-    updateBook : (req, res) => {
-        const {title, author, genre, year, available} = req.body;
-        const bookId = parseInt(req.params.id);
-        const existingBook = books.find(book => book.id === bookId);
-        const currYear = new Date().getFullYear();
-        const updates = {};
+    addBook : async (req, res) => {
+        try {
+            const db = getDB();
+            const {title, author, genre, year, available} = req.body;
+            const currYear = new Date().getFullYear();
 
-        if (!existingBook) return res.status(404).json({ error: "book not found" });
-        if (title === undefined && author === undefined && genre === undefined && year === undefined && available === undefined) return res.status(400).json({ error: "invalid request"});    
-        
-        if (title !== undefined) {
             if (typeof title !== "string" || title.trim().length === 0) return res.status(400).json({ error: "Invalid title"});
-            Object.assign(updates, {title});
-        }
-        
-        if (author !== undefined) {
             if (typeof author !== "string" || author.trim().length === 0) return res.status(400).json({ error: "Invalid author name"});
-            Object.assign(updates, {author});
-        }
-
-        if (genre !== undefined) {
             if (typeof genre !== "string" || genre.trim().length === 0) return res.status(400).json({ error: "Invalid genre"});
-            Object.assign(updates, {genre});
-        }
-
-        if (year !== undefined) {
             if (!Number.isInteger(year) || year < 1000 || year > currYear) return res.status(400).json({ error: "Invalid year"});
-            Object.assign(updates, {year});
-        }
-
-        if (available !== undefined) {
             if (typeof available !== "boolean") return res.status(400).json({ error: "Available must be boolean"});
-            Object.assign(updates, {available});
+
+            const newBook = {
+                    title: title.trim(),
+                    author: author.trim(),
+                    genre: genre.trim(),
+                    year,
+                    available
+                };
+
+            const result = await db.collection('books').insertOne(newBook);
+
+            return res.status(201).json({
+                message: "New book added successfully",
+                data: {
+                    _id: result.insertedId,
+                    ...newBook
+                }
+            });
+        } catch (err) {
+            if (err.code === 11000) {
+                return res.status(409).json({error: "Duplicate entry"});
+            }
+
+            return res.status(500).json({error: "Could not add new book"});
         }
-
-        const updatedBook = {...existingBook, ...updates};
-        
-        const duplicate = books.some(book => book !== existingBook && book.title.toLowerCase().trim() === updatedBook.title.toLowerCase().trim() &&
-                                             book.author.toLowerCase().trim() === updatedBook.author.toLowerCase().trim() &&
-                                             book.year === updatedBook.year);
-
-        if (duplicate) return res.status(400).json({ error : "Duplicate entry"});
-
-        Object.assign(existingBook, updates);
-        
-
-        res.status(200).json({
-            message : "Book updated successfully",
-            data : existingBook
-        })
     },
 
-    deleteBook : (req, res) => {
-        const id = parseInt(req.params.id);
-        const idx = books.findIndex(book => book.id === id);
+    updateBook : async (req, res) => {
+        try {
+            if (ObjectId.isValid(req.params.id)) {
+                const db = getDB();
+                const {title, author, genre, year, available} = req.body;
+                const currYear = new Date().getFullYear();
+                const updates = {};
 
-        if (idx === -1) return res.status(404).json({error : "Book not found"});
+                if (title === undefined && author === undefined && genre === undefined && year === undefined && available === undefined) return res.status(400).json({ error: "Invalid request"});    
+                
+                if (title !== undefined) {
+                    if (typeof title !== "string" || title.trim().length === 0) return res.status(400).json({ error: "Invalid title"});
+                    updates.title = title.trim();
+                }
+                
+                if (author !== undefined) {
+                    if (typeof author !== "string" || author.trim().length === 0) return res.status(400).json({ error: "Invalid author name"});
+                    updates.author = author.trim();
+                }
 
-        books.splice(idx, 1);
+                if (genre !== undefined) {
+                    if (typeof genre !== "string" || genre.trim().length === 0) return res.status(400).json({ error: "Invalid genre"});
+                    updates.genre = genre.trim();
+                }
 
-        res.status(200).json({
-            message : "Book deleted successfully"
-        })
+                if (year !== undefined) {
+                    if (!Number.isInteger(year) || year < 1000 || year > currYear) return res.status(400).json({ error: "Invalid year"});
+                    updates.year = year;
+                }
+
+                if (available !== undefined) {
+                    if (typeof available !== "boolean") return res.status(400).json({ error: "Available must be boolean"});
+                    updates.available = available;
+                }
+
+                const result = await db.collection('books').updateOne({_id : new ObjectId(req.params.id)}, { $set: updates});
+
+                if (result.matchedCount === 0) return res.status(404).json({error : "Book not found"});
+
+                return res.status(200).json({ message : "Book updated successfully" });
+            } else return res.status(400).json({error : "Invalid ID"});
+        } catch (err) {
+            if (err.code === 11000) return res.status(409).json({error: "Requested changes will create a duplicate entry"});
+
+            res.status(500).json({error : "Could not update book"});
+        }
+    },
+
+    deleteBook : async (req, res) => {
+        try {
+            if (ObjectId.isValid(req.params.id)) {
+                const db = getDB();
+                const result = await db.collection('books').deleteOne({ _id: new ObjectId(req.params.id)});
+
+                if (result.deletedCount === 0) return res.status(404).json({error: "Book not found"});
+                
+                return res.status(204).send();
+            } else return res.status(400).json({error: "Invalid ID"});
+        } catch (err) {
+            return res.status(500).json({error : "Could not delete document"});
+        }
     }
 }
