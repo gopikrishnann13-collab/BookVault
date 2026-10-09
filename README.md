@@ -48,11 +48,9 @@ BookVault/
 ### 1. Clone the repository
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/gopikrishnann13-collab/BookVault.git
 cd BookVault
 ```
-
-Replace `<repository-url>` with the URL of your repository.
 
 ### 2. Install dependencies
 
